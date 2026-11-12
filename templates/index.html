@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car Damage Detection AI</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<nav>
+    <span class="nav-title">🚗 Car Damage AI</span>
+    <span class="nav-badge">Model Ready ✅</span>
+</nav>
+
+<div class="container">
+
+    <!-- Upload Section -->
+    <div class="card">
+        <h2>Analyser une image</h2>
+        <div class="upload-zone" id="uploadZone">
+            <p>📸 Glissez une image ici ou</p>
+            <input type="file" id="imageInput" accept="image/*">
+            <label for="imageInput" class="btn-upload">Choisir une image</label>
+        </div>
+        <img id="preview" src="" alt="" style="display:none; max-width:100%; border-radius:10px; margin-top:15px;">
+        <button class="btn-analyze" id="analyzeBtn" onclick="analyzeImage()" style="display:none;">
+            🔍 Analyser
+        </button>
+    </div>
+
+    <!-- Results Section -->
+    <div class="card" id="resultsCard" style="display:none;">
+        <h2>Résultats</h2>
+        <div class="results-grid">
+            <div class="result-box">
+                <p class="result-label">Diagnostic</p>
+                <p class="result-value" id="labelResult">—</p>
+            </div>
+            <div class="result-box">
+                <p class="result-label">Confiance</p>
+                <p class="result-value" id="confidenceResult">—</p>
+            </div>
+            <div class="result-box">
+                <p class="result-label">Statut</p>
+                <p class="result-value" id="statutResult">—</p>
+            </div>
+            <div class="result-box">
+                <p class="result-label">Prix estimé</p>
+                <p class="result-value" id="prixResult">—</p>
+            </div>
+        </div>
+        <div style="margin-top:20px;">
+            <p class="result-label">Grad-CAM — Zone de dommage détectée</p>
+            <img id="gradcamImg" src="" alt="Grad-CAM" style="max-width:100%; border-radius:10px; margin-top:10px;">
+        </div>
+        <p class="recommandation" id="recommandationResult"></p>
+    </div>
+
+    <!-- Chatbot Section -->
+    <div class="card" id="chatCard" style="display:none;">
+        <h2>🤖 Assistant IA</h2>
+        <div class="chat-box" id="chatBox"></div>
+        <div class="chat-input">
+            <input type="text" id="chatInput" placeholder="Posez une question...">
+            <button onclick="sendMessage()">Envoyer</button>
+        </div>
+    </div>
+
+    <!-- History Section -->
+    <div class="card">
+        <h2>📊 Historique des analyses</h2>
+        <button class="btn-history" onclick="loadHistory()">🔄 Actualiser</button>
+        <div id="historyContainer"></div>
+    </div>
+
+</div>
+
+<script>
+let currentLabel = '';
+let currentConfidence = '';
+let currentPrice = {};
+
+// Preview image
+document.getElementById('imageInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const preview = document.getElementById('preview');
+            preview.src = e.target.result;
+            preview.style.display = 'block';
+            document.getElementById('analyzeBtn').style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+    }
+});
+
+// Analyze image
+async function analyzeImage() {
+    const file = document.getElementById('imageInput').files[0];
+    if (!file) return;
+
+    document.getElementById('analyzeBtn').innerText = '⏳ Analyse en cours...';
+
+    const formData = new FormData();
+    formData.append('image', file);
+
+    const response = await fetch('/analyze', { method: 'POST', body: formData });
+    const data = await response.json();
+
+    currentLabel = data.label;
+    currentConfidence = data.confidence;
+    currentPrice = data.price;
+
+    document.getElementById('labelResult').innerText = data.label;
+    document.getElementById('confidenceResult').innerText = data.confidence;
+    document.getElementById('statutResult').innerText = data.price.statut;
+    document.getElementById('prixResult').innerText = data.price.prix_min + ' — ' + data.price.prix_max + ' DH';
+    document.getElementById('recommandationResult').innerText = '💡 ' + data.price.recommandation;
+    document.getElementById('gradcamImg').src = 'data:image/jpeg;base64,' + data.gradcam;
+
+    document.getElementById('resultsCard').style.display = 'block';
+    document.getElementById('chatCard').style.display = 'block';
+    document.getElementById('analyzeBtn').innerText = '🔍 Analyser';
+
+    addMessage('bot', 'Analyse terminée ! Résultat : ' + data.label + ' avec ' + data.confidence + ' de confiance. Posez-moi vos questions !');
+}
+
+// Chatbot
+function addMessage(sender, text) {
+    const box = document.getElementById('chatBox');
+    const div = document.createElement('div');
+    div.className = 'message ' + sender;
+    div.innerText = text;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+}
+
+async function sendMessage() {
+    const input = document.getElementById('chatInput');
+    const msg = input.value.trim();
+    if (!msg) return;
+
+    addMessage('user', msg);
+    input.value = '';
+
+    const response = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            message: msg,
+            label: currentLabel,
+            confidence: currentConfidence,
+            price: currentPrice
+        })
+    });
+    const data = await response.json();
+    addMessage('bot', data.reply);
+}
+
+document.getElementById('chatInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') sendMessage();
+});
+
+// History
+async function loadHistory() {
+    const response = await fetch('/history');
+    const data = await response.json();
+    const container = document.getElementById('historyContainer');
+
+    if (data.length === 0) {
+        container.innerHTML = '<p style="color:#888;">Aucune analyse effectuée.</p>';
+        return;
+    }
+
+    let html = '<table><tr><th>Date</th><th>Résultat</th><th>Confiance</th><th>Prix</th><th>Statut</th></tr>';
+    data.reverse().forEach(item => {
+        html += `<tr>
+            <td>${item.date}</td>
+            <td>${item.resultat}</td>
+            <td>${item.confiance}</td>
+            <td>${item.prix}</td>
+            <td>${item.statut}</td>
+        </tr>`;
+    });
+    html += '</table>';
+    container.innerHTML = html;
+}
+
+loadHistory();
+</script>
+</body>
+</html>
